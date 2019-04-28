@@ -37,7 +37,7 @@ int main(int argc, char **argv);
 bool is_prime(int n);
 void make_prime_vector(int n, int *prime, int *k);
 bool quick_is_prime(unsigned long long int j, int *prime, int k);
-int binarySearch(int arr[], int l, int r, int x);
+int binarySearch(int arr[], int l, int r, unsigned long long int x);
 
 int main(int argc, char **argv)
 {
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
                          MPI_STATUS_IGNORE);
 
                 int workerPrimes[numWorkerPrimes];
-                MPI_Recv(&workerPrimes, numWorkerPrimes, MPI_INT, i, 1,
+                MPI_Recv(workerPrimes, numWorkerPrimes, MPI_INT, i, 1,
                          MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
                 // Truncate the solution if the worker found more than our
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
 
             // Send generated primes back to master.
             MPI_Send(&wNumPrimes, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-            MPI_Send(&wPrimes, wNumPrimes, MPI_INT, 0, 1, MPI_COMM_WORLD);
+            MPI_Send(wPrimes, wNumPrimes, MPI_INT, 0, 1, MPI_COMM_WORLD);
         }
     }
 
@@ -170,101 +170,92 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Give primes to workers.
-    if(rank == 0)
-    {
-        for(i = 1; i < ncpu; ++i)
-        {
-            MPI_Send(&primesGenerated, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-            MPI_Send(&prime, primesGenerated, MPI_INT, i, 1, MPI_COMM_WORLD);
-        }
-    }
-    else
-    {
-        MPI_Recv(&primesGenerated, 1, MPI_INT, 0, 1, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-        MPI_Recv(&prime, primesGenerated, MPI_INT, 0, 1, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-    }
+    //    if(rank == 0)
+    //    {
+    //        for(i = 1; i < ncpu; ++i)
+    //        {
+    //            MPI_Send(&primesGenerated, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+    //            MPI_Send(prime, primesGenerated, MPI_INT, i, 1,
+    //            MPI_COMM_WORLD);
+    //        }
+    MPI_Bcast(&primesGenerated, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(prime, primesGenerated, MPI_INT, 0, MPI_COMM_WORLD);
+    //    }
+    //    else
+    //    {
+    //        MPI_Recv(&primesGenerated, 1, MPI_INT, 0, 1, MPI_COMM_WORLD,
+    //                 MPI_STATUS_IGNORE);
+    //        MPI_Recv(prime, primesGenerated, MPI_INT, 0, 1, MPI_COMM_WORLD,
+    //                 MPI_STATUS_IGNORE);
+    //    }
 
     int mersennesGenerated = 0, currentPower = 2, targetPower = 64;
-    int isNotPrime = 0;
     if(rank == 0)
     {
-        // Send tasks to workers.
-        int numTasks = targetPower / (ncpu - 1),
-            leftOver = targetPower % (ncpu - 1);
-        for(i = 1; i < ncpu; ++i)
+        do
         {
-            // Assign a range of power each node is responsible for. If
-            // we're assigning work to the last node, give them the left
-            // over. The given range is inclusive. I'm assuming we won't
-            // have less than one task given to a node.
-            int min = (i - 1) * numTasks, max = i * numTasks - 1;
-            if(i == ncpu - 1)
+            // Send tasks to workers.
+            for(i = 1; i < ncpu; ++i)
             {
-                max += leftOver;
+                MPI_Send(&startTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+                MPI_Send(&currentPower, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+
+                if(++currentPower > targetPower)
+                {
+                    break;
+                }
             }
 
-            printf("[%d] Assigning (%d, %d) to %d\n", rank, min, max, i);
+            // Receive solutions.
+            for(i = 1; i < ncpu; ++i)
+            {
+                int answer;
+                MPI_Recv(&answer, 1, MPI_INT, i, 1, MPI_COMM_WORLD,
+                         MPI_STATUS_IGNORE);
+                //                printf("[%d] Received %d from %d\n", rank,
+                //                answer, i);
+                if(answer != 0)
+                {
+                    mersenne[mersennesGenerated++] = answer;
+                }
+            }
+        } while(currentPower <= targetPower);
 
-            MPI_Send(&min, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-            MPI_Send(&max, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-        }
-
-        // Receive solutions.
+        // Tell workers to stop.
         for(i = 1; i < ncpu; ++i)
         {
-            int length;
-            MPI_Recv(&length, 1, MPI_INT, i, 1, MPI_COMM_WORLD,
-                     MPI_STATUS_IGNORE);
-
-            printf("[%d] Received %d from %d\n", rank, length, i);
-
-            int workerMersennePrime[length];
-            MPI_Recv(&workerMersennePrime, length, MPI_INT, i, 1,
-                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            int k;
-            for(k = 0; k < length; ++k)
-            {
-                int dest = k + mersennesGenerated;
-                mersenne[dest] = workerMersennePrime[k];
-            }
-
-            mersennesGenerated += length;
+            MPI_Send(&stopTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
         }
     }
     else
     {
-        int min, max;
-        MPI_Recv(&min, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&max, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        int wMersennePrime[max - min + 1], index = 0;
-
-        //        printf("[%d] Received min %d and max %d\n", rank, min, max);
-        //        printf("[%d] Creating a %d big array\n", rank, (max - min +
-        //        1));
-
-        for(i = min; i <= max; ++i)
+        int msg, primesSent = 0;
+        while(1)
         {
-            // Skip powers less than 2.
-            if(i > 2)
+            // Continue while there's more work to do, otherwise stop.
+            MPI_Recv(&msg, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            if(msg == stopTask)
             {
-                unsigned long long int j =
-                    (unsigned long long int)pow(2, i) - 1;
-                if(binarySearch(prime, 0, primesGenerated, j) != -1)
-                {
-                    wMersennePrime[index++] = i;
-                }
+                break;
             }
+
+            int num;
+            MPI_Recv(&num, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            //            printf("[%d] Received %d to check\n", rank, num);
+
+            int answer = 0;
+            unsigned long long int j = (unsigned long long int)pow(2, num) - 1;
+            if((j < (unsigned long long int)prime[primesGenerated - 1] &&
+                binarySearch(prime, 0, primesGenerated, j) != -1) ||
+               quick_is_prime(j, prime, primesGenerated) == true)
+            {
+                answer = num;
+                ++primesSent;
+            }
+
+            MPI_Send(&answer, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+            //            printf("[%d] %d is %d\n", rank, num, answer);
         }
-
-        printf("[%d] Found %d primes between %d and %d\n", rank, index, min,
-               max);
-
-        MPI_Send(&index, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-        MPI_Send(&wMersennePrime, index, MPI_INT, 0, 1, MPI_COMM_WORLD);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -280,26 +271,6 @@ int main(int argc, char **argv)
         {
             j = (unsigned long long int)pow(2, mersenne[i]) - 1;
             printf("2^(%d)-1 = %llu \n", mersenne[i], j);
-        }
-
-        j = (unsigned long long int)pow(2, 31) - 1;
-        if(binarySearch(prime, 0, primesGenerated, j) != -1)
-        {
-            printf("[%d] 31 is a mersenne prime\n", rank);
-            if(quick_is_prime(j, prime, primesGenerated) == true)
-            {
-                printf("[%d] 31 is a mersenne prime (double check)\n", rank);
-            }
-        }
-
-        j = (unsigned long long int)pow(2, 61) - 1;
-        if(binarySearch(prime, 0, primesGenerated, j) != -1)
-        {
-            printf("[%d] 61 is a mersenne prime\n", rank);
-            if(quick_is_prime(j, prime, primesGenerated) == true)
-            {
-                printf("[%d] 61 is a mersenne prime (double check)\n", rank);
-            }
         }
     }
 
@@ -448,21 +419,21 @@ bool quick_is_prime(unsigned long long int j, int *prime, int k)
 //  \return -1 if the number is not in the array or the the given x if x is
 //  within the given arr.
 //
-int binarySearch(int arr[], int l, int r, int x)
+int binarySearch(int arr[], int l, int r, unsigned long long int x)
 {
     if(r >= l)
     {
         int mid = l + (r - l) / 2;
 
         // If the element is present at the middle itself.
-        if(arr[mid] == x)
+        if((unsigned long long int)arr[mid] == x)
         {
             return mid;
         }
 
         // If element is smaller than mid, then it can only be present in left
         // subarray.
-        if(arr[mid] > x)
+        if((unsigned long long int)arr[mid] > x)
         {
             return binarySearch(arr, l, mid - 1, x);
         }
