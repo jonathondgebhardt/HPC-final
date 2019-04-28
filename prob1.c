@@ -6,7 +6,8 @@
 #include <time.h>
 
 /*
- * Leverage Slurm and MPI to find MAXK primes and 64 Mersenne primes.
+ * Leverage Slurm and MPI to find MAXK prime numbers and Mersenne prime
+ * numbers between 0 and 64.
  *
  * https://en.wikipedia.org/wiki/Mersenne_prime
  *
@@ -30,7 +31,7 @@
 //        the code to use openmp and run faster
 //        Use 1 node and all cores on the node
 
-#define MAXPRIME 100000
+#define MAXPRIME 1000000
 #define MAXK MAXPRIME - 2
 
 int main(int argc, char **argv);
@@ -49,9 +50,9 @@ int main(int argc, char **argv)
 
     int mersenne[64], prime[MAXPRIME];
 
-    // primeRange indicates a range of values each worker is responsible for
-    // (i.e., worker 1 is responsible for 0-999, worker 2 is responsible
-    // for 1,000-1,999 etc).
+    // primeRange indicates an inclusive range of values each worker is
+    // responsible for (i.e., worker 1 is responsible for 0-999, worker 2 is
+    // responsible for 1,000-1,999 etc).
     int i, primeRange = 1000;
 
     clock_t begin;
@@ -173,76 +174,37 @@ int main(int argc, char **argv)
     MPI_Bcast(&primesGenerated, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(prime, primesGenerated, MPI_INT, 0, MPI_COMM_WORLD);
 
-    int mersennesGenerated = 0, currentPower = 2, targetPower = 64;
-    if(rank == 0)
+    int targetPower = 64;
+    int numTasks = targetPower / ncpu, leftOver = targetPower % ncpu;
+    int min = rank * numTasks, max = (rank + 1) * numTasks - 1;
+
+    // Assign all the leftover to the last worker.
+    if(rank == ncpu - 1)
     {
-        do
-        {
-            // Send tasks to workers.
-            for(i = 1; i < ncpu; ++i)
-            {
-                MPI_Send(&startTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-                MPI_Send(&currentPower, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-
-                if(++currentPower > targetPower)
-                {
-                    break;
-                }
-            }
-
-            // Receive solutions.
-            for(i = 1; i < ncpu; ++i)
-            {
-                int answer;
-                MPI_Recv(&answer, 1, MPI_INT, i, 1, MPI_COMM_WORLD,
-                         MPI_STATUS_IGNORE);
-                //                printf("[%d] Received %d from %d\n", rank,
-                //                answer, i);
-                if(answer != 0)
-                {
-                    mersenne[mersennesGenerated++] = answer;
-                }
-            }
-        } while(currentPower <= targetPower);
-
-        // Tell workers to stop.
-        for(i = 1; i < ncpu; ++i)
-        {
-            MPI_Send(&stopTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-        }
+        max += leftOver;
     }
-    else
+
+    int length = max - min + 1;
+    int wMersennePrime[length];
+
+    // Find all mersenne primes between min and max inclusive.
+    int index = 0;
+    for(i = min; i <= max; ++i)
     {
-        int msg, primesSent = 0;
-        while(1)
+        unsigned long long int num = (unsigned long long int)pow(2, i) - 1;
+        if(quick_is_prime(num, prime, primesGenerated) == true)
         {
-            // Continue while there's more work to do, otherwise stop.
-            MPI_Recv(&msg, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            if(msg == stopTask)
-            {
-                break;
-            }
-
-            int num;
-            MPI_Recv(&num, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            //            printf("[%d] Received %d to check\n", rank, num);
-
-            int answer = 0;
-            unsigned long long int j = (unsigned long long int)pow(2, num) - 1;
-            if((j < (unsigned long long int)prime[primesGenerated - 1] &&
-                binarySearch(prime, 0, primesGenerated, j) != -1) ||
-               quick_is_prime(j, prime, primesGenerated) == true)
-            {
-                answer = num;
-                ++primesSent;
-            }
-
-            MPI_Send(&answer, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-            //            printf("[%d] %d is %d\n", rank, num, answer);
+            wMersennePrime[index++] = i;
+        }
+        else
+        {
+            wMersennePrime[index++] = 0;
         }
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    int allMersenePrime[targetPower];
+    MPI_Gather(&wMersennePrime, length, MPI_INT, allMersenePrime, length,
+               MPI_INT, 0, MPI_COMM_WORLD);
 
     if(rank == 0)
     {
@@ -250,8 +212,21 @@ int main(int argc, char **argv)
         double time_spent2 = (double)(end2 - end) / CLOCKS_PER_SEC;
         printf("time creating mersenne primes %f \n", time_spent2);
 
+        // Collect all mersenne primes.
+        int numMersenne = 0;
+        if(rank == 0)
+        {
+            for(i = 0; i < targetPower; ++i)
+            {
+                if(allMersenePrime[i] != 0)
+                {
+                    mersenne[numMersenne++] = allMersenePrime[i];
+                }
+            }
+        }
+
         unsigned long long int j;
-        for(i = 0; i < mersennesGenerated; ++i)
+        for(i = 0; i < numMersenne; ++i)
         {
             j = (unsigned long long int)pow(2, mersenne[i]) - 1;
             printf("2^(%d)-1 = %llu \n", mersenne[i], j);
@@ -265,9 +240,13 @@ int main(int argc, char **argv)
     for(isum = 0; isum < primesGenerated; ++isum)
     {
         if(sum > 1000000000)
+        {
             sum = sum - prime[isum];
+        }
         else
+        {
             sum = sum + prime[isum];
+        }
     }
 
     printf("[%d] prime[%d]=%d\n", rank, primesGenerated - 1,
@@ -346,6 +325,10 @@ void make_prime_vector(int n, int *prime, int *k)
 //  This function is provided in an effort to shorten the time to find a prime
 //  within an array. This function does not perform well, however, when the
 //  length of prime increases (i.e., O(n) performance).
+//
+//  Unfortunately, for binary search to work, the number has to be in the
+//  array. For mersenne primes, 2^31-1 and 2^61-1 isn't contained in the
+//  prime array. This is where we take the major performance hit.
 //
 //  \param j The number to check.
 //  \param prime The array to check in.
