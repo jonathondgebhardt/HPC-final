@@ -168,17 +168,99 @@ int main(int argc, char **argv)
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    int k = 0;
-    unsigned long long int j;
-    for(i = 2; i < 64; ++i)
+    // Give primes to workers.
+    if(rank == 0)
     {
-        j = (unsigned long long int)pow(2, i) - 1;
-        if(quick_is_prime(j, prime, primesGenerated))
+        for(i = 1; i < ncpu; ++i)
         {
-            mersenne[k] = i;
-            ++k;
+            MPI_Send(&primesGenerated, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+            MPI_Send(&prime, primesGenerated, MPI_INT, i, 1, MPI_COMM_WORLD);
         }
     }
+    else
+    {
+        MPI_Recv(&primesGenerated, 1, MPI_INT, 0, 1, MPI_COMM_WORLD,
+                 MPI_STATUS_IGNORE);
+        MPI_Recv(&prime, primesGenerated, MPI_INT, 0, 1, MPI_COMM_WORLD,
+                 MPI_STATUS_IGNORE);
+    }
+
+    int mersennesGenerated = 0, currentPower = 2, targetPower = 64;
+    int isNotPrime = 0, isPrime = 1;
+    if(rank == 0)
+    {
+        printf("[%d] Generated mersenne primes\n", rank);
+        do
+        {
+            // Send tasks to workers.
+            for(i = 1; i < ncpu; ++i)
+            {
+                MPI_Send(&startTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+                MPI_Send(&currentPower, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+
+                if(++currentPower > targetPower)
+                {
+                    break;
+                }
+            }
+
+            printf("[%d] Sent up to %d powers\n", rank, currentPower);
+
+            // Receive solutions.
+            int answer;
+            for(i = 1; i < ncpu; ++i)
+            {
+                MPI_Recv(&answer, 1, MPI_INT, i, 1, MPI_COMM_WORLD,
+                         MPI_STATUS_IGNORE);
+                if(answer != isNotPrime && mersennesGenerated != 8)
+                {
+                    mersenne[mersennesGenerated++] = answer;
+                    printf("[%d] Received %d\n", rank, answer);
+                }
+            }
+
+            printf("[%d] Received %d primes so far\n", rank,
+                   mersennesGenerated);
+        } while(currentPower <= targetPower);
+
+        printf("[%d] Received %d primes\n", rank, mersennesGenerated);
+
+        // Tell workers to stop.
+        for(i = 1; i < ncpu; ++i)
+        {
+            MPI_Send(&stopTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+        }
+    }
+    else
+    {
+        int msg, primesSent = 0;
+        while(1)
+        {
+            // Continue while there's more work to do, otherwise stop.
+            MPI_Recv(&msg, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            if(msg == stopTask)
+            {
+                printf("[%d] Sent %d primes to master\n", rank, primesSent);
+                break;
+            }
+
+            int num;
+            MPI_Recv(&num, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            unsigned long long int j = (unsigned long long int)pow(2, num) - 1;
+            if(quick_is_prime(j, prime, primesGenerated) == true)
+            {
+                MPI_Send(&num, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+                ++primesSent;
+
+                printf("[%d] %d is a prime\n", rank, num);
+            }
+
+            MPI_Send(&isNotPrime, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+        }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     if(rank == 0)
     {
@@ -186,12 +268,15 @@ int main(int argc, char **argv)
         double time_spent2 = (double)(end2 - end) / CLOCKS_PER_SEC;
         printf("time creating mersenne primes %f \n", time_spent2);
 
-        for(i = 0; i < k; ++i)
+        unsigned long long int j;
+        for(i = 0; i < mersennesGenerated; ++i)
         {
             j = (unsigned long long int)pow(2, mersenne[i]) - 1;
             printf("2^(%d)-1 = %llu \n", mersenne[i], j);
         }
     }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     int isum;
     long int sum = 0;
@@ -203,7 +288,8 @@ int main(int argc, char **argv)
             sum = sum + prime[isum];
     }
 
-    printf("[%d] prime[%d]=%d\n", rank, k - 1, prime[k - 1]);
+    printf("[%d] prime[%d]=%d\n", rank, primesGenerated - 1,
+           prime[primesGenerated - 1]);
     printf("[%d] sum=%d\n", rank, sum);
 
     MPI_Barrier(MPI_COMM_WORLD);
