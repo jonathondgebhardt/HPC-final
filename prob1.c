@@ -37,6 +37,7 @@ int main(int argc, char **argv);
 bool is_prime(int n);
 void make_prime_vector(int n, int *prime, int *k);
 bool quick_is_prime(unsigned long long int j, int *prime, int k);
+int binarySearch(int arr[], int l, int r, int x);
 
 int main(int argc, char **argv)
 {
@@ -186,78 +187,84 @@ int main(int argc, char **argv)
     }
 
     int mersennesGenerated = 0, currentPower = 2, targetPower = 64;
-    int isNotPrime = 0, isPrime = 1;
+    int isNotPrime = 0;
     if(rank == 0)
     {
-        printf("[%d] Generated mersenne primes\n", rank);
-        do
-        {
-            // Send tasks to workers.
-            for(i = 1; i < ncpu; ++i)
-            {
-                MPI_Send(&startTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-                MPI_Send(&currentPower, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-
-                if(++currentPower > targetPower)
-                {
-                    break;
-                }
-            }
-
-            printf("[%d] Sent up to %d powers\n", rank, currentPower);
-
-            // Receive solutions.
-            int answer;
-            for(i = 1; i < ncpu; ++i)
-            {
-                MPI_Recv(&answer, 1, MPI_INT, i, 1, MPI_COMM_WORLD,
-                         MPI_STATUS_IGNORE);
-                if(answer != isNotPrime && mersennesGenerated != 8)
-                {
-                    mersenne[mersennesGenerated++] = answer;
-                    printf("[%d] Received %d\n", rank, answer);
-                }
-            }
-
-            printf("[%d] Received %d primes so far\n", rank,
-                   mersennesGenerated);
-        } while(currentPower <= targetPower);
-
-        printf("[%d] Received %d primes\n", rank, mersennesGenerated);
-
-        // Tell workers to stop.
+        // Send tasks to workers.
+        int numTasks = targetPower / (ncpu - 1),
+            leftOver = targetPower % (ncpu - 1);
         for(i = 1; i < ncpu; ++i)
         {
-            MPI_Send(&stopTask, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+            // Assign a range of power each node is responsible for. If
+            // we're assigning work to the last node, give them the left
+            // over. The given range is inclusive. I'm assuming we won't
+            // have less than one task given to a node.
+            int min = (i - 1) * numTasks, max = i * numTasks - 1;
+            if(i == ncpu - 1)
+            {
+                max += leftOver;
+            }
+
+            printf("[%d] Assigning (%d, %d) to %d\n", rank, min, max, i);
+
+            MPI_Send(&min, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+            MPI_Send(&max, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
+        }
+
+        // Receive solutions.
+        for(i = 1; i < ncpu; ++i)
+        {
+            int length;
+            MPI_Recv(&length, 1, MPI_INT, i, 1, MPI_COMM_WORLD,
+                     MPI_STATUS_IGNORE);
+
+            printf("[%d] Received %d from %d\n", rank, length, i);
+
+            int workerMersennePrime[length];
+            MPI_Recv(&workerMersennePrime, length, MPI_INT, i, 1,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            int k;
+            for(k = 0; k < length; ++k)
+            {
+                int dest = k + mersennesGenerated;
+                mersenne[dest] = workerMersennePrime[k];
+            }
+
+            mersennesGenerated += length;
         }
     }
     else
     {
-        int msg, primesSent = 0;
-        while(1)
+        int min, max;
+        MPI_Recv(&min, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&max, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        int wMersennePrime[max - min + 1], index = 0;
+
+        //        printf("[%d] Received min %d and max %d\n", rank, min, max);
+        //        printf("[%d] Creating a %d big array\n", rank, (max - min +
+        //        1));
+
+        for(i = min; i <= max; ++i)
         {
-            // Continue while there's more work to do, otherwise stop.
-            MPI_Recv(&msg, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            if(msg == stopTask)
+            // Skip powers less than 2.
+            if(i > 2)
             {
-                printf("[%d] Sent %d primes to master\n", rank, primesSent);
-                break;
+                unsigned long long int j =
+                    (unsigned long long int)pow(2, i) - 1;
+                if(binarySearch(prime, 0, primesGenerated, j) != -1)
+                {
+                    wMersennePrime[index++] = i;
+                }
             }
-
-            int num;
-            MPI_Recv(&num, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            unsigned long long int j = (unsigned long long int)pow(2, num) - 1;
-            if(quick_is_prime(j, prime, primesGenerated) == true)
-            {
-                MPI_Send(&num, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-                ++primesSent;
-
-                printf("[%d] %d is a prime\n", rank, num);
-            }
-
-            MPI_Send(&isNotPrime, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
         }
+
+        printf("[%d] Found %d primes between %d and %d\n", rank, index, min,
+               max);
+
+        MPI_Send(&index, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+        MPI_Send(&wMersennePrime, index, MPI_INT, 0, 1, MPI_COMM_WORLD);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -273,6 +280,26 @@ int main(int argc, char **argv)
         {
             j = (unsigned long long int)pow(2, mersenne[i]) - 1;
             printf("2^(%d)-1 = %llu \n", mersenne[i], j);
+        }
+
+        j = (unsigned long long int)pow(2, 31) - 1;
+        if(binarySearch(prime, 0, primesGenerated, j) != -1)
+        {
+            printf("[%d] 31 is a mersenne prime\n", rank);
+            if(quick_is_prime(j, prime, primesGenerated) == true)
+            {
+                printf("[%d] 31 is a mersenne prime (double check)\n", rank);
+            }
+        }
+
+        j = (unsigned long long int)pow(2, 61) - 1;
+        if(binarySearch(prime, 0, primesGenerated, j) != -1)
+        {
+            printf("[%d] 61 is a mersenne prime\n", rank);
+            if(quick_is_prime(j, prime, primesGenerated) == true)
+            {
+                printf("[%d] 61 is a mersenne prime (double check)\n", rank);
+            }
         }
     }
 
@@ -296,43 +323,97 @@ int main(int argc, char **argv)
     MPI_Finalize();
 }
 
+//
+//  \brief Check if the given number is prime.
+//
+//  \param n The number to check.
+//
+//  \return Whether the given number is prime.
+//
 bool is_prime(int n)
 {
-    if(n <= 3) return (n > 1);
-    if(n % 2 == 0 || n % 3 == 0) return (false);
+    if(n <= 3)
+    {
+        return n > 1;
+    }
+
+    if(n % 2 == 0 || n % 3 == 0)
+    {
+        return false;
+    }
+
     int i = 5;
     while(i * i <= n)
     {
-        if(n % i == 0 || n % (i + 2) == 0) return (false);
+        if(n % i == 0 || n % (i + 2) == 0)
+        {
+            return false;
+        }
+
         i = i + 6;
     }
-    return (true);
+
+    return true;
 }
 
+//
+//  \brief Add the given n to the given index k in the given array prime if n
+//  is not evenly divisible by the values leading up to k.
+//
+//  This function modifies the prime and k parameters.
+//
+//  \param n the number to add.
+//  \param prime the array to add the number to.
+//  \param k the index of the array in which to add the number.
+//
 void make_prime_vector(int n, int *prime, int *k)
 {
     int i = 2;
     while(i < (*k))
     {
-        if(n % prime[i] == 0) return;
+        if(n % prime[i] == 0)
+        {
+            return;
+        }
+
         ++i;
     }
+
     prime[(*k)] = n;
     ++(*k);
+
     return;
 }
 
+//
+//  \brief A quicker check for finding a number in an array.
+//
+//  This function is provided in an effort to shorten the time to find a prime
+//  within an array. This function does not perform well, however, when the
+//  length of prime increases (i.e., O(n) performance).
+//
+//  \param j The number to check.
+//  \param prime The array to check in.
+//  \param k The length of the given array.
+//
+//  \return True if the given j is prime, false otherwise.
+//
 bool quick_is_prime(unsigned long long int j, int *prime, int k)
 {
     int i = 1;
     while(i < k)
     {
-        if(j % (unsigned long long int)prime[i] == 0) return (false);
+        if(j % (unsigned long long int)prime[i] == 0)
+        {
+            return false;
+        }
+
         if((unsigned long long int)prime[i] * (unsigned long long int)prime[i] >
            j)
         {
-            return (true);
+            return true;
         }
+
         ++i;
     }
 
@@ -340,8 +421,56 @@ bool quick_is_prime(unsigned long long int j, int *prime, int k)
     ii = (unsigned long long int)(prime[k - 2] + 6);
     while(ii * ii <= j)
     {
-        if(j % ii == 0 || j % (ii + 2) == 0) return (false);
+        if(j % ii == 0 || j % (ii + 2) == 0)
+        {
+            return false;
+        }
+
         ii = ii + 6;
     }
-    return (true);
+
+    return true;
+}
+
+//
+//  \brief Get whether a number is in an array.
+//
+//  A recursive implementation of binary search found at:
+//  https://www.geeksforgeeks.org/binary-search/
+//
+//  I included this function for better search performance (i.e., O(log(n)).
+//
+//  \param arr The array to search in.
+//  \param l The lower bound at which to start.
+//  \param r The upper bound at which to stop.
+//  \param x The number to search for.
+//
+//  \return -1 if the number is not in the array or the the given x if x is
+//  within the given arr.
+//
+int binarySearch(int arr[], int l, int r, int x)
+{
+    if(r >= l)
+    {
+        int mid = l + (r - l) / 2;
+
+        // If the element is present at the middle itself.
+        if(arr[mid] == x)
+        {
+            return mid;
+        }
+
+        // If element is smaller than mid, then it can only be present in left
+        // subarray.
+        if(arr[mid] > x)
+        {
+            return binarySearch(arr, l, mid - 1, x);
+        }
+
+        // Else the element can only be present in right subarray.
+        return binarySearch(arr, mid + 1, r, x);
+    }
+
+    // We reach here when element is not present in array.
+    return -1;
 }
