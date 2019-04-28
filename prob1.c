@@ -170,24 +170,8 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Give primes to workers.
-    //    if(rank == 0)
-    //    {
-    //        for(i = 1; i < ncpu; ++i)
-    //        {
-    //            MPI_Send(&primesGenerated, 1, MPI_INT, i, 1, MPI_COMM_WORLD);
-    //            MPI_Send(prime, primesGenerated, MPI_INT, i, 1,
-    //            MPI_COMM_WORLD);
-    //        }
     MPI_Bcast(&primesGenerated, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(prime, primesGenerated, MPI_INT, 0, MPI_COMM_WORLD);
-    //    }
-    //    else
-    //    {
-    //        MPI_Recv(&primesGenerated, 1, MPI_INT, 0, 1, MPI_COMM_WORLD,
-    //                 MPI_STATUS_IGNORE);
-    //        MPI_Recv(prime, primesGenerated, MPI_INT, 0, 1, MPI_COMM_WORLD,
-    //                 MPI_STATUS_IGNORE);
-    //    }
 
     int mersennesGenerated = 0, currentPower = 2, targetPower = 64;
     if(rank == 0)
