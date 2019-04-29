@@ -1,0 +1,7 @@
+#!/usr/bin/bash
+
+/act/openmpi-2.0/gcc/bin/mpicc -o prob1_omp.mpi prob1_omp.c -lm -fopenmp
+
+# make it executable
+chmod 700 prob1_omp.mpi
+

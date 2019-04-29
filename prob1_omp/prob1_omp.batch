@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+#SBATCH --job-name=prob1_omp
+#SBATCH --output=prob1_omp.txt
+
+./prob1_omp.mpi
