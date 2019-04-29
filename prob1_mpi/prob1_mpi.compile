@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+# Compile source with mpicc
+mpicc prob1_mpi.c -o prob1_mpi.mpi -lm
+
