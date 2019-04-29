@@ -6,6 +6,19 @@
 #include <time.h>
 #include <unistd.h>
 
+/*
+ * Leverage Slurm and MPI to find an absolute minimum value in a 
+ * multidimensional polynomial using steepest descent.
+ *
+ * https://en.wikipedia.org/wiki/Mersenne_prime
+ *
+ * Author: Jonathon Gebhardt
+ * Class: CS4900-B90
+ * Instructor: Dr. John Nehrbass
+ * Assignment: Final
+ * GitHub: https://github.com/jonathondgebhardt/HPC-final.git
+ */
+
 #define slow 2000
 #define eps 0.00000001
 
