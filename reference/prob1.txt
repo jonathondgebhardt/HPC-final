@@ -1,0 +1,25 @@
+k=999998 prime[k-1]=15485849 
+
+time creating prime vector 2033.160000 
+time creating mersenne primes 4.300000 
+2^(3)-1 = 7 
+2^(5)-1 = 31 
+2^(7)-1 = 127 
+2^(13)-1 = 8191 
+2^(17)-1 = 131071 
+2^(19)-1 = 524287 
+2^(31)-1 = 2147483647 
+2^(61)-1 = 2305843009213693951 
+prime[999997]=15485849
+sum=992196125
+-------------------------------------------------------
+Primary job  terminated normally, but 1 process returned
+a non-zero exit code.. Per user-direction, the job has been aborted.
+-------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun detected that one or more processes exited with non-zero status, thus causing
+the job to be terminated. The first process to do so was:
+
+  Process name: [[52180,1],0]
+  Exit code:    14
+--------------------------------------------------------------------------

@@ -1,0 +1,20 @@
+Brute Force answer 
+x=-5.175175 y=8.858859 min=-218139.390532 
+Time for Brute Force answer 2104.684022 sec 
+
+Smallest value -218144.154769
+Found at x=-5.173244 y=8.852645
+Within the range of x:-10.00 10.00
+                    y:-10.00 10.00
+Time for Steepest Descent Method 9.866636 sec 
+-------------------------------------------------------
+Primary job  terminated normally, but 1 process returned
+a non-zero exit code.. Per user-direction, the job has been aborted.
+-------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun detected that one or more processes exited with non-zero status, thus causing
+the job to be terminated. The first process to do so was:
+
+  Process name: [[23807,1],0]
+  Exit code:    47
+--------------------------------------------------------------------------
