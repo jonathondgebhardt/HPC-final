@@ -6,8 +6,8 @@
 
 #SBATCH -N 16 
 #SBATCH --tasks-per-node=2
-#SBATCH --job-name=prob2
-#SBATCH --output=prob2.txt
+#SBATCH --job-name=prob2_mpi
+#SBATCH --output=prob2_mpi.txt
 
 # First make sure all other modules are not loaded.
 module purge
@@ -17,5 +17,5 @@ module purge
 module load openmpi-2.0/gcc
 
 # Run on a single Node 
-mpirun --mca btl_tcp_if_include en0 --mca btl tcp,self -np 32 ./prob2.mpi
+mpirun --mca btl_tcp_if_include en0 --mca btl tcp,self -np 32 ./prob2_mpi.mpi
 

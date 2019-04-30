@@ -3,3 +3,5 @@
 # Compile source with mpicc
 mpicc prob2_mpi.c -o prob2_mpi.mpi -lm
 
+# make it executable
+chmod 700 prob2_mpi.mpi

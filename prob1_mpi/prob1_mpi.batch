@@ -6,8 +6,8 @@
 
 #SBATCH -N 16 
 #SBATCH --tasks-per-node=2
-#SBATCH --job-name=prob1
-#SBATCH --output=prob1.txt
+#SBATCH --job-name=prob1_mpi
+#SBATCH --output=prob1_mpi.txt
 
 # First make sure all other modules are not loaded.
 module purge
