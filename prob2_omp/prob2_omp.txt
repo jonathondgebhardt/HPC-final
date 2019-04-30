@@ -1,0 +1,9 @@
+Brute Force answer 
+x=8.858859 y=-5.175175 min=-218139.390532 
+Time for Brute Force answer 133.205642 sec 
+
+Smallest value -218144.154769
+Found at x=8.852645 y=-5.173244
+Within the range of x:-10.00 10.00
+                    y:-10.00 10.00
+Time for Steepest Descent Method 3.445500 sec 
